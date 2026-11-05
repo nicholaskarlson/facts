@@ -1,0 +1,3 @@
+# Keep every file byte for byte as committed, on every system, so the checksums in
+# companion/SHA256SUMS match on Windows too.
+* -text

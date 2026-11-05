@@ -1,0 +1,76 @@
+name: Rerun the numbers
+
+# Runs the three programs exactly as the book prints them, on the three systems
+# readers use, with the oldest and newest Python the book's instructions cover.
+# It also confirms that the Tonmick files match the Predictive companion's checksums.
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  rerun:
+    name: ${{ matrix.os }}, Python ${{ matrix.python }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python: ['3.10', '3.13']
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: The Tonmick files match the companion's checksums
+        shell: bash
+        run: |
+          python - <<'EOF'
+          import hashlib, pathlib, sys
+          bad = 0
+          for line in pathlib.Path("companion/SHA256SUMS").read_text(encoding="utf-8").splitlines():
+              want, name = line.split(None, 1)
+              got = hashlib.sha256(pathlib.Path("companion", name.lstrip("*")).read_bytes()).hexdigest()
+              if got != want:
+                  print("MISMATCH", name); bad += 1
+          print("FILES_OK" if not bad else f"{bad} files differ")
+          sys.exit(1 if bad else 0)
+          EOF
+
+      - name: The book's commands (Ubuntu and macOS)
+        if: runner.os != 'Windows'
+        run: |
+          python3 verification/independent/spine_check.py companion
+          python3 verification/independent/details_check.py companion
+          python3 verification/independent/chapter_numbers_check.py companion
+
+      - name: The book's commands (Windows, with python in place of python3)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          python verification/independent/spine_check.py companion
+          python verification/independent/details_check.py companion
+          python verification/independent/chapter_numbers_check.py companion
+
+  fresh-clone:
+    # The printed block, from git clone on, in an empty folder: what a reader does first.
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: The book's commands, from a fresh clone
+        run: |
+          cd "$RUNNER_TEMP"
+          git clone https://github.com/nicholaskarlson/facts.git
+          cd facts
+          python3 verification/independent/spine_check.py companion
+          python3 verification/independent/details_check.py companion
+          python3 verification/independent/chapter_numbers_check.py companion
